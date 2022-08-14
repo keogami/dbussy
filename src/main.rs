@@ -56,7 +56,7 @@ where
 fn main() -> Result<(), Box<dyn Error>> {
     let args = Args::parse();
     let _proxy = gen_proxy(args.bus, args.name, args.path, args.interface)?;
+    let _jq = jq_rs::compile(&args.query)?;
 
-    dbg!(_proxy);
     Ok(())
 }
