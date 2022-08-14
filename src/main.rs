@@ -1,6 +1,6 @@
 use clap::{Parser, ValueEnum};
 use std::error::Error;
-use zbus::blocking::{Connection, Proxy};
+use zbus::blocking::{Connection, Proxy, SignalIterator};
 use zbus::names::{InterfaceName, BusName};
 use zbus::zvariant::ObjectPath;
 
@@ -53,10 +53,17 @@ where
     Ok(proxy)
 }
 
+fn iterate_messages(iter: SignalIterator, _jq: &jq_rs::JqProgram) {
+    for _message in iter {
+        todo!("call the transformation pipeline");
+    }
+}
+
 fn main() -> Result<(), Box<dyn Error>> {
     let args = Args::parse();
-    let _proxy = gen_proxy(args.bus, args.name, args.path, args.interface)?;
-    let _jq = jq_rs::compile(&args.query)?;
+    let proxy = gen_proxy(args.bus, args.name, args.path, args.interface)?;
+    let jq = jq_rs::compile(&args.query)?;
 
+    iterate_messages(proxy.receive_all_signals()?, &jq);
     Ok(())
 }
