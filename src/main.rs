@@ -1,4 +1,8 @@
 use clap::{Parser, ValueEnum};
+use std::error::Error;
+use zbus::blocking::{Connection, Proxy};
+use zbus::names::{InterfaceName, BusName};
+use zbus::zvariant::ObjectPath;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
 enum BusType {
@@ -30,6 +34,29 @@ struct Args {
     query: String,
 }
 
-fn main() {
-    let _args = Args::parse();
+fn gen_proxy<'a, N, P, I>(bus_type: BusType, name: N, path: P, iface: I) -> Result<zbus::blocking::Proxy<'a>, Box<dyn Error>>
+where
+    N: TryInto<BusName<'a>>,
+    P: TryInto<ObjectPath<'a>>,
+    I: TryInto<InterfaceName<'a>>,
+    N::Error: Into<zbus::Error>,
+    P::Error: Into<zbus::Error>,
+    I::Error: Into<zbus::Error>,
+{
+    let conn = match bus_type {
+        BusType::Session => Connection::session()?,
+        BusType::System => Connection::system()?,
+    };
+
+    let proxy = Proxy::new(&conn, name, path, iface)?;
+
+    Ok(proxy)
+}
+
+fn main() -> Result<(), Box<dyn Error>> {
+    let args = Args::parse();
+    let _proxy = gen_proxy(args.bus, args.name, args.path, args.interface)?;
+
+    dbg!(_proxy);
+    Ok(())
 }
