@@ -1,4 +1,5 @@
 use clap::{Parser, ValueEnum};
+use serde_json::json;
 use std::error::Error;
 use zbus::blocking::{Connection, Proxy, SignalIterator};
 use zbus::names::{InterfaceName, BusName};
@@ -53,17 +54,32 @@ where
     Ok(proxy)
 }
 
-fn iterate_messages(iter: SignalIterator, _jq: &jq_rs::JqProgram) {
-    for _message in iter {
-        todo!("call the transformation pipeline");
+fn iterate_messages(iter: SignalIterator, jq: &mut jq_rs::JqProgram) -> Result<(), Box<dyn Error>> {
+    for message in iter {
+        let structure: zbus::zvariant::Structure = message.body()?;
+
+        let data = serde_json::to_value(structure.fields())?;
+
+        let signature = serde_json::to_value(structure.full_signature())?;
+
+        let value = json!({
+            "data": data,
+            "signature": signature,
+        });
+
+        let filtered = jq.run(&value.to_string())?;
+
+        println!("{}", filtered);
     }
+
+    Ok(())
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
     let args = Args::parse();
     let proxy = gen_proxy(args.bus, args.name, args.path, args.interface)?;
-    let jq = jq_rs::compile(&args.query)?;
+    let mut jq = jq_rs::compile(&args.query)?;
 
-    iterate_messages(proxy.receive_all_signals()?, &jq);
+    iterate_messages(proxy.receive_all_signals()?, &mut jq)?;
     Ok(())
 }
