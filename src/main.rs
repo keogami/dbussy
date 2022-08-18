@@ -67,7 +67,8 @@ fn iterate_messages(iter: SignalIterator, jq: &mut jq_rs::JqProgram) -> Result<(
             "signature": signature,
         });
 
-        let filtered = jq.run(&value.to_string())?;
+        let mut filtered = jq.run(&value.to_string())?;
+        filtered.pop(); // removing the trailing newline from the jq
 
         println!("{}", filtered);
     }
