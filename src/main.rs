@@ -132,9 +132,15 @@ fn iterate_messages(iter: SignalIterator, jq: &mut jq_rs::JqProgram) -> Result<(
         let data = serde_json::to_value(&structure)?;
         let signature = serde_json::to_value(structure.0.value_signature())?;
 
+        let signal = match message.member() {
+            Some(name) => name.as_str().to_owned(),
+            None => "".to_owned(),
+        };
+
         let value = json!({
             "data": data,
             "signature": signature,
+            "signal": signal,
         });
 
         let mut filtered = jq.run(&value.to_string())?;
