@@ -36,6 +36,10 @@ struct Args {
     /// JQL query to filter and manipulate dbus signal body
     #[clap(short, long)]
     query: String,
+
+    /// The Signal name to listen to. If not provided, events from all members are reported
+    #[clap(short, long)]
+    signal: Option<String>,
 }
 
 fn gen_proxy<'a, N, P, I>(bus_type: BusType, name: N, path: P, iface: I) -> Result<zbus::blocking::Proxy<'a>, Box<dyn Error>>
@@ -147,6 +151,11 @@ fn main() -> Result<(), Box<dyn Error>> {
     let proxy = gen_proxy(args.bus, args.name, args.path, args.interface)?;
     let mut jq = jq_rs::compile(&args.query)?;
 
-    iterate_messages(proxy.receive_all_signals()?, &mut jq)?;
+    let iter = match args.signal {
+        Some(signal) => proxy.receive_signal(signal)?,
+        None => proxy.receive_all_signals()?,
+    };
+
+    iterate_messages(iter, &mut jq)?;
     Ok(())
 }
