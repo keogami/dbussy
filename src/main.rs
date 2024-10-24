@@ -1,11 +1,11 @@
 use clap::{Parser, ValueEnum};
 use serde_json::json;
-use zbus::export::serde::Serialize;
-use zbus::export::serde::ser::{SerializeSeq, SerializeTuple};
 use std::collections::HashMap;
 use std::error::Error;
 use zbus::blocking::{Connection, Proxy, SignalIterator};
-use zbus::names::{InterfaceName, BusName};
+use zbus::export::serde::ser::{SerializeSeq, SerializeTuple};
+use zbus::export::serde::Serialize;
+use zbus::names::{BusName, InterfaceName};
 use zbus::zvariant::ObjectPath;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
@@ -42,7 +42,12 @@ struct Args {
     signal: Option<String>,
 }
 
-fn gen_proxy<'a, N, P, I>(bus_type: BusType, name: N, path: P, iface: I) -> Result<zbus::blocking::Proxy<'a>, Box<dyn Error>>
+fn gen_proxy<'a, N, P, I>(
+    bus_type: BusType,
+    name: N,
+    path: P,
+    iface: I,
+) -> Result<zbus::blocking::Proxy<'a>, Box<dyn Error>>
 where
     N: TryInto<BusName<'a>>,
     P: TryInto<ObjectPath<'a>>,
@@ -66,11 +71,11 @@ struct SaneValue<'a>(zbus::zvariant::Value<'a>);
 impl Serialize for SaneValue<'_> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
-        S: zbus::export::serde::Serializer
+        S: zbus::export::serde::Serializer,
     {
-        use zbus::zvariant::Value;
         use std::os::unix::prelude::AsRawFd;
         use zbus::export::serde::ser::{Error, SerializeMap};
+        use zbus::zvariant::Value;
         match &self.0 {
             &Value::U8(n) => serializer.serialize_u8(n),
             &Value::U16(n) => serializer.serialize_u16(n),
@@ -97,7 +102,7 @@ impl Serialize for SaneValue<'_> {
                     seq.serialize_element(&SaneValue(element))?;
                 }
                 seq.end()
-            },
+            }
 
             Value::Structure(v) => {
                 let v = v.fields();
@@ -106,20 +111,25 @@ impl Serialize for SaneValue<'_> {
                     seq.serialize_element(&SaneValue(element.to_owned()))?;
                 }
                 seq.end()
-            },
+            }
 
             Value::Dict(v) => {
                 let d = v.to_owned();
                 let v: HashMap<String, Value> = match HashMap::try_from(d) {
                     Ok(map) => map,
-                    Err(err) => return Err(Error::custom(format!("Dict couldn't be converted into a HashMap for serialization: {}", err))),
+                    Err(err) => {
+                        return Err(Error::custom(format!(
+                            "Dict couldn't be converted into a HashMap for serialization: {}",
+                            err
+                        )))
+                    }
                 };
                 let mut map = serializer.serialize_map(Some(v.len()))?;
                 for (key, value) in v {
                     map.serialize_entry(&SaneValue(Value::from(key)), &SaneValue(value))?;
                 }
                 map.end()
-            },
+            }
         }
     }
 }
