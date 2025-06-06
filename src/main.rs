@@ -1,3 +1,4 @@
+use anyhow::Context;
 use clap::{Parser, ValueEnum};
 use serde_json::json;
 use std::collections::HashMap;
@@ -47,7 +48,7 @@ fn gen_proxy<'a, N, P, I>(
     name: N,
     path: P,
     iface: I,
-) -> Result<zbus::blocking::Proxy<'a>, Box<dyn Error>>
+) -> anyhow::Result<zbus::blocking::Proxy<'a>>
 where
     N: TryInto<BusName<'a>>,
     P: TryInto<ObjectPath<'a>>,
@@ -57,8 +58,8 @@ where
     I::Error: Into<zbus::Error>,
 {
     let conn = match bus_type {
-        BusType::Session => Connection::session()?,
-        BusType::System => Connection::system()?,
+        BusType::Session => Connection::session().context("Couldn't connect to session bus")?,
+        BusType::System => Connection::system().context("Couldn't connect to system bus")?,
     };
 
     let proxy = Proxy::new(&conn, name, path, iface)?;
@@ -134,13 +135,15 @@ impl Serialize for SaneValue<'_> {
     }
 }
 
-fn iterate_messages(iter: SignalIterator, jq: &mut jq_rs::JqProgram) -> Result<(), Box<dyn Error>> {
+fn iterate_messages(iter: SignalIterator, jq: &mut jq_rs::JqProgram) -> anyhow::Result<()> {
     for message in iter {
-        let structure: zbus::zvariant::Structure = message.body()?;
+        let structure: zbus::zvariant::Structure =
+            message.body().context("Couldn't deserialize message")?;
         let structure = SaneValue(zbus::zvariant::Value::Structure(structure));
 
-        let data = serde_json::to_value(&structure)?;
-        let signature = serde_json::to_value(structure.0.value_signature())?;
+        let data = serde_json::to_value(&structure).expect("Serializer to not panic");
+        let signature = serde_json::to_value(structure.0.value_signature())
+            .expect("Signature to be serializable to valid json");
 
         let signal = match message.member() {
             Some(name) => name.as_str().to_owned(),
@@ -153,7 +156,7 @@ fn iterate_messages(iter: SignalIterator, jq: &mut jq_rs::JqProgram) -> Result<(
             "signal": signal,
         });
 
-        let mut filtered = jq.run(&value.to_string())?;
+        let mut filtered = jq.run(&value.to_string()).context("Jq failed to run")?;
         filtered.pop(); // removing the trailing newline from the jq
 
         println!("{}", filtered);
@@ -162,16 +165,21 @@ fn iterate_messages(iter: SignalIterator, jq: &mut jq_rs::JqProgram) -> Result<(
     Ok(())
 }
 
-fn main() -> Result<(), Box<dyn Error>> {
+fn main() -> anyhow::Result<()> {
     let args = Args::parse();
-    let proxy = gen_proxy(args.bus, args.name, args.path, args.interface)?;
-    let mut jq = jq_rs::compile(&args.query)?;
+    let proxy = gen_proxy(args.bus, args.name, args.path, args.interface)
+        .context("Couldn't generate proxy to bus")?;
+    let mut jq = jq_rs::compile(&args.query).context("Couldn't compile the jq command")?;
 
     let iter = match args.signal {
-        Some(signal) => proxy.receive_signal(signal)?,
-        None => proxy.receive_all_signals()?,
+        Some(signal) => proxy
+            .receive_signal(signal)
+            .context("Couldn't start receiving for the signal")?,
+        None => proxy
+            .receive_all_signals()
+            .context("Couldn't start receiving for all signals")?,
     };
 
-    iterate_messages(iter, &mut jq)?;
+    iterate_messages(iter, &mut jq).context("Failed while receiving messages")?;
     Ok(())
 }
